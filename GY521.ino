@@ -1,7 +1,7 @@
 #include "Wire.h"
 #include "Ultrasonic.h"
-#include < ESP8266WiFi.h >
-#include < ESP8266HTTPClient.h >
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
 
 const uint8_t MPU_addr = 0x68; // I2C address of the MPU-6050
 
@@ -14,8 +14,9 @@ const float MPU_ACCL_4_SCALE = 8192.0;
 const float MPU_ACCL_8_SCALE = 4096.0;
 const float MPU_ACCL_16_SCALE = 2048.0;
 
-const char * ssid = "nisaruj2.4G";
-const char * pass = "52006647";
+const char * ssid = "NISARUJ";
+const char * pass = "87654321";
+const String IP = "172.20.10.5";
 
 struct rawdata {
   int16_t AcX;
@@ -42,6 +43,7 @@ bool screenCalb = true;
 rawdata calbRawdata;
 scaleddata calbScaleddata;
 scaleddata data;
+int dist;
 
 int TouchSensor = 14;
 int triggerButton = 15;
@@ -90,7 +92,7 @@ void loop() {
   timePrev = timeNow;
   timeNow = millis();
   deltaTime = (timeNow - timePrev) / 1000;
-  if (digitalRead(TouchSensor) == HIGH && calb) {
+  if (digitalRead(TouchSensor) == HIGH) {
     Serial.println("Touched");
     setMPU6050scales(MPU_addr, 0b00000000, 0b00010000);
     calbRawdata = mpu6050Read(MPU_addr, false);
@@ -103,7 +105,8 @@ void loop() {
     next_sample = mpu6050Read(MPU_addr, false);
     data = convertRawToScaled(MPU_addr, next_sample, false);
     Serial.print("Alpha: " + String(data.GyX + 180) + " Beta: " + String(data.GyZ) + " Gamma: " + String(data.GyY) + " Dist: ");
-    Serial.println(ultrasonic.Ranging(CM));
+    dist = ultrasonic.Ranging(CM);
+    Serial.println(dist);
 
     if (digitalRead(triggerButton) == HIGH) {
       Serial.println("SHOOT");
@@ -113,7 +116,7 @@ void loop() {
       Serial.println("Alpha: " + String(data.GyX + 180) + " Beta: " + String(data.GyZ));
       HTTPClient http; //Declare an object of class HTTPClient
 
-      http.begin("http://192.168.2.41:5000/calibrate/" + String((int) data.GyX + 180) + "/" + String((int) data.GyZ) + "/0/20"); //Specify request destination
+      http.begin("http://" + IP + ":5000/calibrate/" + String((int) data.GyX + 180) + "/" + String((int) data.GyZ) + "/0/" + String(dist)); //Specify request destination
       int httpCode = http.GET(); //Send the request
 
       if (httpCode > 0) { //Check the returning code
@@ -129,7 +132,7 @@ void loop() {
       Serial.println("Alpha: " + String(data.GyX + 180) + " Beta: " + String(data.GyZ));
       HTTPClient http; //Declare an object of class HTTPClient
 
-      http.begin("http://192.168.2.41:5000/shoot/" + String((int) data.GyX + 180) + "/" + String((int) data.GyZ) + "/0/20/" + (digitalRead(triggerButton) == HIGH ? "1" : "0")); //Specify request destination
+      http.begin("http://" + IP + ":5000/shoot/" + String((int) data.GyX + 180) + "/" + String((int) data.GyZ) + "/0/" + String(dist) + "/" + (digitalRead(triggerButton) == HIGH ? "1" : "0")); //Specify request destination
       int httpCode = http.GET(); //Send the request
 
       if (httpCode > 0) { //Check the returning code
@@ -140,12 +143,11 @@ void loop() {
 
     }
     //
-    delay(100); // Wait 0.1 seconds and scan again
   }
 
-  if (digitalRead(TouchSensor) == HIGH && !calb) {
+  /*if (digitalRead(TouchSensor) == HIGH && !calb) {
     calb = true;
-  }
+  }*/
   //Serial.println(deltaTime);
   delay(100);
 }
