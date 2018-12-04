@@ -14,8 +14,9 @@ const float MPU_ACCL_4_SCALE = 8192.0;
 const float MPU_ACCL_8_SCALE = 4096.0;
 const float MPU_ACCL_16_SCALE = 2048.0;
 
-const char* ssid = "NISARUJ";
-const char* pass = "87654321";
+const char * ssid = "NISARUJ";
+const char * pass = "87654321";
+const String IP = "172.20.10.5";
 
 struct rawdata {
   int16_t AcX;
@@ -42,6 +43,7 @@ bool screenCalb = true;
 rawdata calbRawdata;
 scaleddata calbScaleddata;
 scaleddata data;
+int dist;
 
 int TouchSensor = 14;
 int triggerButton = 15;
@@ -51,6 +53,7 @@ double timePrev = timeNow;
 double deltaTime = 0.0;
 
 double X_SENSITIVITY = 2.5;
+double Y_SENSITIVITY = 2.5;
 double Z_SENSITIVITY = 2.5;
 
 double x = 0, y = 0, z = 0;
@@ -67,6 +70,7 @@ Ultrasonic ultrasonic(12, 13);
 void setup() {
   Wire.begin();
   Serial.begin(115200);
+  Serial.print("Start");
   pinMode(TouchSensor, INPUT);
   pinMode(triggerButton, INPUT);
   WiFi.begin(ssid, pass);
@@ -76,11 +80,11 @@ void setup() {
     Serial.print(".");
     delay(500);
   }
-  Serial.println(""); 
+  Serial.println("");
   Serial.println("Wi-Fi connected");
   Serial.print("IP Address : ");
   Serial.println(WiFi.localIP()); //แสดง IP ของบอร์ดที่ได้รับแจกจาก AP
-  
+
   mpu6050Begin(MPU_addr);
 }
 
@@ -88,7 +92,7 @@ void loop() {
   timePrev = timeNow;
   timeNow = millis();
   deltaTime = (timeNow - timePrev) / 1000;
-  if (digitalRead(TouchSensor) == HIGH && calb) {
+  if (digitalRead(TouchSensor) == HIGH) {
     Serial.println("Touched");
     setMPU6050scales(MPU_addr, 0b00000000, 0b00010000);
     calbRawdata = mpu6050Read(MPU_addr, false);
@@ -100,44 +104,52 @@ void loop() {
     setMPU6050scales(MPU_addr, 0b00000000, 0b00010000);
     next_sample = mpu6050Read(MPU_addr, false);
     data = convertRawToScaled(MPU_addr, next_sample, false);
+    Serial.print("Alpha: " + String(data.GyX + 180) + " Beta: " + String(data.GyZ) + " Gamma: " + String(data.GyY) + " Dist: ");
+    dist = ultrasonic.Ranging(CM);
+    Serial.println(dist);
+
     if (digitalRead(triggerButton) == HIGH) {
-      Serial.println("Alpha: " + String(data.GyZ) + " Beta: " + String(data.GyX));
-      HTTPClient http;  //Declare an object of class HTTPClient
-   
-      http.begin("http://172.20.10.5:5000/calibrate/" + String((int)data.GyZ) + "/" + String((int)data.GyX) + "/0/20");  //Specify request destination
-      int httpCode = http.GET();                                                                  //Send the request
- 
+      Serial.println("SHOOT");
+    }
+
+    if (screenCalb && digitalRead(triggerButton) == HIGH) {
+      Serial.println("Alpha: " + String(data.GyX + 180) + " Beta: " + String(data.GyZ));
+      HTTPClient http; //Declare an object of class HTTPClient
+
+      http.begin("http://" + IP + ":5000/calibrate/" + String((int) data.GyX + 180) + "/" + String((int) data.GyZ) + "/0/" + String(dist)); //Specify request destination
+      int httpCode = http.GET(); //Send the request
+
       if (httpCode > 0) { //Check the returning code
-        String payload = http.getString();   //Get the request response payload
-        Serial.println(payload);                     //Print the response payload
+        String payload = http.getString(); //Get the request response payload
+        Serial.println(payload); //Print the response payload
         if (payload == "Finished") {
           screenCalb = false;
         }
       }
-      http.end();   //Close connection
+      http.end(); //Close connection
     }
     if (!screenCalb) {
-        Serial.println("Alpha: " + String(data.GyZ) + " Beta: " + String(data.GyX));
-        HTTPClient http;  //Declare an object of class HTTPClient
-     
-        http.begin("http://172.20.10.5:5000/shoot/" + String((int)data.GyZ) + "/" + String((int)data.GyX) + "/0/20/"+ (digitalRead(triggerButton) == HIGH ? "1" : "0"));  //Specify request destination
-        int httpCode = http.GET();                                                                  //Send the request
-   
-        if (httpCode > 0) { //Check the returning code
-          String payload = http.getString();   //Get the request response payload
-          Serial.println(payload);                     //Print the response payload
-        }
-        http.end();   //Close connection
-        
+      Serial.println("Alpha: " + String(data.GyX + 180) + " Beta: " + String(data.GyZ));
+      HTTPClient http; //Declare an object of class HTTPClient
+
+      http.begin("http://" + IP + ":5000/shoot/" + String((int) data.GyX + 180) + "/" + String((int) data.GyZ) + "/0/" + String(dist) + "/" + (digitalRead(triggerButton) == HIGH ? "1" : "0")); //Specify request destination
+      int httpCode = http.GET(); //Send the request
+
+      if (httpCode > 0) { //Check the returning code
+        String payload = http.getString(); //Get the request response payload
+        Serial.println(payload); //Print the response payload
+      }
+      http.end(); //Close connection
+
     }
-    //Serial.println(ultrasonic.Ranging(CM));
-    delay(100); // Wait 0.1 seconds and scan again
+    //
   }
 
-  if (digitalRead(TouchSensor) == HIGH && !calb) {
+  /*if (digitalRead(TouchSensor) == HIGH && !calb) {
     calb = true;
-  }
+  }*/
   //Serial.println(deltaTime);
+  delay(100);
 }
 
 void mpu6050Begin(byte addr) {
@@ -268,36 +280,36 @@ scaleddata convertRawToScaled(byte addr, rawdata data_in, bool Debug) {
   default:
     break;
   }
-  if(!calb){
+  if (!calb) {
     values.GyX = (float)(data_in.GyX) / scale_value - calbScaleddata.GyX;
     values.GyY = (float)(data_in.GyY) / scale_value - calbScaleddata.GyY;
     values.GyZ = (float)(data_in.GyZ) / scale_value - calbScaleddata.GyZ;
-  }
-  else{
+  } else {
     values.GyX = (float)(data_in.GyX) / scale_value;
     values.GyY = (float)(data_in.GyY) / scale_value;
     values.GyZ = (float)(data_in.GyZ) / scale_value;
     X_SENSITIVITY = abs(values.GyX) + 0.75;
+    Y_SENSITIVITY = abs(values.GyY) + 0.75;
     Z_SENSITIVITY = abs(values.GyZ) + 0.75;
-    
+
   }
   if (abs(values.GyX) < X_SENSITIVITY) values.GyX = 0;
-  if (abs(values.GyY) < X_SENSITIVITY) values.GyY = 0;
+  if (abs(values.GyY) < Y_SENSITIVITY) values.GyY = 0;
   if (abs(values.GyZ) < Z_SENSITIVITY) values.GyZ = 0;
 
   x += values.GyX * deltaTime;
   y += values.GyY * deltaTime;
-  z += values.GyZ * deltaTime;
+  z += values.GyZ * deltaTime * (values.GyZ < 0 ? 0.5 : 1.2);
 
   if (calb) {
     Serial.println("WTF");
     x = 0;
+    y = 0;
     z = 0;
   }
-  double xp = -1 * x;
-  double zp = fmod(z, 360);
-  if (z < 0) z += 360;
-  zp = z;
+  double xp = x;
+  double yp = y;
+  double zp = z;
 
   scale_value = 0.0;
   if (Debug) {
@@ -359,6 +371,7 @@ scaleddata convertRawToScaled(byte addr, rawdata data_in, bool Debug) {
   }
 
   rvalues.GyX = xp;
+  rvalues.GyY = yp;
   rvalues.GyZ = zp;
 
   return rvalues;
